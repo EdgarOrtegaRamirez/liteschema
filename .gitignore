@@ -1,0 +1,26 @@
+# Binaries
+/liteschema
+/liteschema.exe
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Go
+*.test
+*.test.exe
+*.prof
+cover.out
+covdatafiles/
+
+# Dependencies
+vendor/
+
+# Environment
+.env
