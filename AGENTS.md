@@ -14,14 +14,22 @@ LiteSchema is a Go CLI tool for SQLite schema analysis, diffing, migration gener
 | `pkg/schema/printer.go` | Output formatters (text tree, JSON, Markdown, SQL) |
 | `pkg/schema/diff.go` | Semantic schema diff engine (`Diff`, `FormatDiff`) |
 | `pkg/schema/analyze.go` | Index analysis, FK graph, schema validation, migration generation |
+| `pkg/schema/stats.go` | Column/table statistics and profiling (`CollectColumnStats`, `CollectTableStats`) |
 | `pkg/schema/schema_test.go` | 40+ tests |
+| `pkg/sqlite/engine.go` | SQLite database wrapper (`Open`, `Query`, `TableInfo`, `ForeignKeyInfo`, `Exec`) |
+| `pkg/sqlite/engine_test.go` | Tests for database operations |
+| `pkg/export/export.go` | Data export to JSON, CSV, SQL INSERT formats |
+| `pkg/export/export_test.go` | Tests for all export formats |
+| `pkg/viz/viz.go` | FK relationship graph visualization (ASCII, Mermaid, DOT) |
+| `pkg/viz/viz_test.go` | Tests for graph visualization |
 
 ## Data Flow
 
 1. **Input**: SQL string (`.sql`), JSON file (`.json`), or SQLite database (`.db`/`.sqlite`)
 2. **Parse**: `Parser.ParseFromSQL()` or `Parser.ParseFromDB()` → `*DatabaseSchema`
-3. **Process**: Diff, analyze, validate, or visualize
-4. **Output**: Text, JSON, Markdown, or SQL
+3. **Process**: Diff, analyze, validate, visualize, profile, or export
+4. **Query/Export**: Direct database access via `pkg/sqlite` engine
+5. **Output**: Text, JSON, Markdown, SQL, CSV, Mermaid, or DOT
 
 ## Important Patterns
 
@@ -34,8 +42,8 @@ LiteSchema is a Go CLI tool for SQLite schema analysis, diffing, migration gener
 ## Build & Test
 
 ```bash
-go build ./...
-go test ./pkg/schema/ -v
+go build ./cmd/liteschema/
+go test ./... -v
 go vet ./...
 ```
 

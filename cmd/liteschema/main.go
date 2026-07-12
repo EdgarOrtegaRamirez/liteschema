@@ -5,8 +5,12 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"text/tabwriter"
 
+	"github.com/EdgarOrtegaRamirez/liteschema/pkg/export"
 	"github.com/EdgarOrtegaRamirez/liteschema/pkg/schema"
+	"github.com/EdgarOrtegaRamirez/liteschema/pkg/sqlite"
+	"github.com/EdgarOrtegaRamirez/liteschema/pkg/viz"
 )
 
 func main() {
@@ -36,11 +40,16 @@ func run(args []string) error {
 		return validateSchema(args[1:])
 	case "fkgraph":
 		return fkGraph(args[1:])
-	case "help":
+	case "query":
+		return executeQuery(args[1:])
+	case "profile":
+		return profileDatabase(args[1:])
+	case "export":
+		return exportData(args[1:])
+	case "help", "--help", "-h":
 		printUsage()
 		return nil
 	default:
-		// Try as file path — parse a .db file or .sql file
 		return parseSchema(args)
 	}
 }
@@ -49,28 +58,36 @@ func printUsage() {
 	fmt.Println(`LiteSchema — SQLite Schema Analysis & Migration CLI
 
 Usage:
-  liteschema <command> [options] <file>
+  liteschema <command> [options] <args>
 
-Commands:
-  parse <file.sql|file.db>   Parse and display a SQLite schema
-  diff <old> <new>           Compute schema diff between two files
-  migrate <old> <new>        Generate migration SQL from diff
-  analyze <file>             Analyze indexes and schema health
-  validate <file>            Validate schema for common issues
-  fkgraph <file>             Display foreign key dependency graph
-  help                       Show this help message
+Schema Commands:
+  parse <file>              Parse and display a SQLite schema
+  diff <old> <new>          Compute schema diff between two files
+  migrate <old> <new>       Generate migration SQL from diff
+  analyze <file>            Analyze indexes and schema health
+  validate <file>           Validate schema for common issues
+  fkgraph <file>            Display foreign key dependency graph
+
+Data Commands:
+  query <database> <sql>    Execute SQL queries with formatted output
+  profile <database> [table]  Show table statistics and data profiling
+  export <database> <table>   Export table data to various formats
 
 Options:
-  --format text|json|markdown|sql  Output format (default: text)
-  --show-sql                       Include CREATE statements in schema view
+  --format text|json|markdown|sql|mermaid|dot|csv  Output format
+  --show-sql                    Include CREATE statements
+  --file <path>                 Read SQL from file (query)
+  --output <file>               Output file (export)
+  --limit <n>                   Limit rows (export)
 
 Examples:
   liteschema parse schema.sql
-  liteschema parse database.db
-  liteschema diff v1.sql v2.sql
-  liteschema migrate v1.sql v2.sql --format sql
-  liteschema analyze database.db --format json
-  liteschema validate schema.sql`)
+  liteschema query myapp.db "SELECT * FROM users"
+  liteschema query myapp.db --format json "SELECT id, name FROM users"
+  liteschema profile myapp.db users
+  liteschema export myapp.db users --format json --limit 10
+  liteschema fkgraph myapp.db --format mermaid
+  liteschema fkgraph myapp.db --format dot`)
 }
 
 func parseFlags(args []string) (files []string, format string, showSQL bool) {
@@ -99,7 +116,6 @@ func loadSchema(path string) (*schema.DatabaseSchema, error) {
 
 	var s *schema.DatabaseSchema
 
-	// Try JSON first
 	if strings.HasSuffix(path, ".json") {
 		s = &schema.DatabaseSchema{}
 		if err := json.Unmarshal(data, s); err == nil {
@@ -107,14 +123,12 @@ func loadSchema(path string) (*schema.DatabaseSchema, error) {
 		}
 	}
 
-	// Try SQL parsing
 	p := schema.NewParser()
 	s, err = p.ParseFromSQL(string(data))
 	if err == nil && len(s.Tables) > 0 {
 		return s, nil
 	}
 
-	// Try as database file
 	if strings.HasSuffix(path, ".db") || strings.HasSuffix(path, ".sqlite") {
 		s, err = p.ParseFromDB(path)
 		if err == nil && len(s.Tables) > 0 {
@@ -122,8 +136,7 @@ func loadSchema(path string) (*schema.DatabaseSchema, error) {
 		}
 	}
 
-	// If SQL didn't find tables, maybe the file has a different format
-	if strings.HasSuffix(path, ".sql") || strings.HasSuffix(path, ".txt") {
+	if strings.HasSuffix(path, ".sql") || strings.HasSuffix(path, ".txt") || strings.HasSuffix(path, ".ddl") {
 		return s, nil
 	}
 
@@ -221,7 +234,6 @@ func analyzeSchema(args []string) error {
 	}
 
 	result := schema.AnalyzeIndexes(s)
-
 	switch format {
 	case "json":
 		data, _ := json.MarshalIndent(result, "", "  ")
@@ -248,7 +260,6 @@ func validateSchema(args []string) error {
 	}
 
 	result := schema.ValidateSchema(s)
-
 	switch format {
 	case "json":
 		data, _ := json.MarshalIndent(result, "", "  ")
@@ -274,14 +285,376 @@ func fkGraph(args []string) error {
 		return err
 	}
 
-	g := schema.BuildFKGraph(s)
+	// Check if we have a live database to extract PK/FK info
+	if len(files) > 1 {
+		// Use live database mode
+		dbPath := files[1]
+		db, err := sqlite.Open(dbPath)
+		if err != nil {
+			return err
+		}
+		defer db.Close()
 
+		graph := viz.NewRelationshipGraph()
+		for _, t := range s.Tables {
+			// Get PKs from live DB
+			cols, err := db.TableInfo(t.Name)
+			if err == nil {
+				for _, col := range cols {
+					if col.PrimaryKey {
+						graph.AddPrimaryKey(t.Name, col.Name)
+					}
+				}
+			}
+			// Also add PKs from schema
+			for _, col := range t.Columns {
+				if col.PrimaryKey {
+					graph.AddPrimaryKey(t.Name, col.Name)
+				}
+			}
+			// Add FK relations
+			for _, fk := range t.ForeignKeys {
+				graph.AddRelation(viz.TableRelation{
+					FromTable:  t.Name,
+					FromColumn: strings.Join(fk.Columns, ", "),
+					ToTable:    fk.RefTable,
+					ToColumn:   strings.Join(fk.RefColumns, ", "),
+					OnDelete:   fk.OnDelete,
+					OnUpdate:   fk.OnUpdate,
+				})
+			}
+		}
+
+		switch format {
+		case "mermaid":
+			fmt.Print(graph.FormatMermaid())
+		case "dot":
+			fmt.Print(graph.FormatDot())
+		default:
+			fmt.Print(graph.FormatASCII())
+		}
+		return nil
+	}
+
+	// Schema-only mode (existing behavior)
+	g := schema.BuildFKGraph(s)
 	switch format {
 	case "json":
 		data, _ := json.MarshalIndent(g, "", "  ")
 		fmt.Println(string(data))
+	case "mermaid":
+		// Convert to mermaid format
+		graph := viz.NewRelationshipGraph()
+		for _, t := range s.Tables {
+			for _, col := range t.Columns {
+				if col.PrimaryKey {
+					graph.AddPrimaryKey(t.Name, col.Name)
+				}
+			}
+			for _, fk := range t.ForeignKeys {
+				graph.AddRelation(viz.TableRelation{
+					FromTable:  t.Name,
+					FromColumn: strings.Join(fk.Columns, ", "),
+					ToTable:    fk.RefTable,
+					ToColumn:   strings.Join(fk.RefColumns, ", "),
+					OnDelete:   fk.OnDelete,
+					OnUpdate:   fk.OnUpdate,
+				})
+			}
+		}
+		fmt.Print(graph.FormatMermaid())
+	case "dot":
+		graph := viz.NewRelationshipGraph()
+		for _, t := range s.Tables {
+			for _, col := range t.Columns {
+				if col.PrimaryKey {
+					graph.AddPrimaryKey(t.Name, col.Name)
+				}
+			}
+			for _, fk := range t.ForeignKeys {
+				graph.AddRelation(viz.TableRelation{
+					FromTable:  t.Name,
+					FromColumn: strings.Join(fk.Columns, ", "),
+					ToTable:    fk.RefTable,
+					ToColumn:   strings.Join(fk.RefColumns, ", "),
+					OnDelete:   fk.OnDelete,
+					OnUpdate:   fk.OnUpdate,
+				})
+			}
+		}
+		fmt.Print(graph.FormatDot())
 	default:
 		fmt.Print(schema.FormatFKGraph(g))
 	}
 	return nil
+}
+
+// --- NEW COMMANDS ---
+
+func executeQuery(args []string) error {
+	if len(args) < 2 {
+		return fmt.Errorf("usage: liteschema query <database> <sql> [--format table|json|csv] [--file <path>]")
+	}
+
+	dbPath := args[0]
+	query := args[1]
+	format := "table"
+	file := ""
+
+	// Parse remaining flags
+	for i := 2; i < len(args); i++ {
+		switch args[i] {
+		case "--format":
+			if i+1 < len(args) {
+				format = args[i+1]
+				i++
+			}
+		case "--file":
+			if i+1 < len(args) {
+				file = args[i+1]
+				i++
+			}
+		}
+	}
+
+	if file != "" {
+		data, err := os.ReadFile(file)
+		if err != nil {
+			return fmt.Errorf("read query file: %w", err)
+		}
+		query = string(data)
+	}
+
+	query = strings.TrimSpace(query)
+	query = strings.TrimSuffix(query, ";")
+
+	db, err := sqlite.Open(dbPath)
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+
+	rows, err := db.Query(query)
+	if err != nil {
+		return fmt.Errorf("execute query: %w", err)
+	}
+
+	if len(rows) == 0 {
+		fmt.Println("No results.")
+		return nil
+	}
+
+	// Get column names from first row
+	columns := make([]string, 0, len(rows[0]))
+	for col := range rows[0] {
+		columns = append(columns, col)
+	}
+
+	switch format {
+	case "json":
+		return export.ExportJSON(os.Stdout, rows)
+	case "csv":
+		return export.ExportCSV(os.Stdout, columns, rows)
+	default: // table
+		tw := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+		for i, col := range columns {
+			if i > 0 {
+				fmt.Fprint(tw, "\t")
+			}
+			fmt.Fprint(tw, strings.ToUpper(col))
+		}
+		fmt.Fprintln(tw)
+
+		for i := range columns {
+			if i > 0 {
+				fmt.Fprint(tw, "\t")
+			}
+			fmt.Fprint(tw, strings.Repeat("-", len(strings.ToUpper(columns[i]))))
+		}
+		fmt.Fprintln(tw)
+
+		for _, row := range rows {
+			for i, col := range columns {
+				if i > 0 {
+					fmt.Fprint(tw, "\t")
+				}
+				fmt.Fprint(tw, row[col])
+			}
+			fmt.Fprintln(tw)
+		}
+		tw.Flush()
+
+		fmt.Printf("\n(%d rows)\n", len(rows))
+	}
+
+	return nil
+}
+
+func profileDatabase(args []string) error {
+	if len(args) < 1 {
+		return fmt.Errorf("usage: liteschema profile <database> [table] [--format text|json]")
+	}
+
+	dbPath := args[0]
+	format := "text"
+	tableName := ""
+
+	for i := 1; i < len(args); i++ {
+		switch args[i] {
+		case "--format":
+			if i+1 < len(args) {
+				format = args[i+1]
+				i++
+			}
+		default:
+			if tableName == "" {
+				tableName = args[i]
+			}
+		}
+	}
+
+	db, err := sqlite.Open(dbPath)
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+
+	executor := &dbQueryExecutor{db: db}
+
+	if tableName != "" {
+		ts, err := schema.ProfileTable(executor, tableName)
+		if err != nil {
+			return fmt.Errorf("profile table: %w", err)
+		}
+		switch format {
+		case "json":
+			data := schema.FormatProfileJSON(ts)
+			enc := json.NewEncoder(os.Stdout)
+			enc.SetIndent("", "  ")
+			return enc.Encode(data)
+		default:
+			fmt.Print(schema.FormatProfileText(ts))
+		}
+	} else {
+		names, err := db.TableNames()
+		if err != nil {
+			return err
+		}
+		for _, name := range names {
+			ts, err := schema.ProfileTable(executor, name)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Warning: could not profile %q: %v\n", name, err)
+				continue
+			}
+			switch format {
+			case "json":
+				data := schema.FormatProfileJSON(ts)
+				enc := json.NewEncoder(os.Stdout)
+				enc.SetIndent("", "  ")
+				_ = enc.Encode(data)
+			default:
+				fmt.Print(schema.FormatProfileText(ts))
+			}
+		}
+	}
+
+	return nil
+}
+
+func exportData(args []string) error {
+	if len(args) < 2 {
+		return fmt.Errorf("usage: liteschema export <database> <table> [--format csv|json|sql] [--output <file>] [--limit <n>]")
+	}
+
+	dbPath := args[0]
+	tableName := args[1]
+	format := "csv"
+	outputFile := ""
+	limit := 0
+
+	for i := 2; i < len(args); i++ {
+		switch args[i] {
+		case "--format":
+			if i+1 < len(args) {
+				format = args[i+1]
+				i++
+			}
+		case "--output":
+			if i+1 < len(args) {
+				outputFile = args[i+1]
+				i++
+			}
+		case "--limit":
+			if i+1 < len(args) {
+				fmt.Sscanf(args[i+1], "%d", &limit)
+				i++
+			}
+		}
+	}
+
+	query := fmt.Sprintf("SELECT * FROM %s", tableName)
+	if limit > 0 {
+		query += fmt.Sprintf(" LIMIT %d", limit)
+	}
+
+	db, err := sqlite.Open(dbPath)
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+
+	rows, err := db.Query(query)
+	if err != nil {
+		return fmt.Errorf("query table: %w", err)
+	}
+
+	if len(rows) == 0 {
+		fmt.Println("No data to export.")
+		return nil
+	}
+
+	columns := make([]string, 0, len(rows[0]))
+	for col := range rows[0] {
+		columns = append(columns, col)
+	}
+
+	// Write to file or stdout
+	if outputFile != "" {
+		f, err := os.Create(outputFile)
+		if err != nil {
+			return fmt.Errorf("create output file: %w", err)
+		}
+		defer f.Close()
+
+		switch format {
+		case "json":
+			return export.ExportJSON(f, rows)
+		case "sql":
+			return export.ExportSQL(f, tableName, columns, rows)
+		default:
+			return export.ExportCSV(f, columns, rows)
+		}
+	} else {
+		switch format {
+		case "json":
+			return export.ExportJSON(os.Stdout, rows)
+		case "sql":
+			return export.ExportSQL(os.Stdout, tableName, columns, rows)
+		default:
+			return export.ExportCSV(os.Stdout, columns, rows)
+		}
+	}
+}
+
+// dbQueryExecutor wraps sqlite.DB to implement schema.QueryExecutor
+type dbQueryExecutor struct {
+	db *sqlite.DB
+}
+
+func (e *dbQueryExecutor) Query(query string, args ...interface{}) ([]map[string]interface{}, error) {
+	return e.db.Query(query, args...)
+}
+
+func (e *dbQueryExecutor) QueryScalar(query string, args ...interface{}) (interface{}, error) {
+	return e.db.QueryScalar(query, args...)
 }
