@@ -321,7 +321,7 @@ func TestValidateSchemaOrphanedFK(t *testing.T) {
 	s := &DatabaseSchema{
 		Tables: []Table{
 			{
-				Name: "t1",
+				Name:    "t1",
 				Columns: []Column{{Name: "ref_id", Type: "INTEGER"}},
 				ForeignKeys: []ForeignKey{
 					{Columns: []string{"ref_id"}, RefTable: "nonexistent", RefColumns: []string{"id"}},

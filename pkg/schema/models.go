@@ -3,7 +3,7 @@ package schema
 // Column represents a single column in a SQLite table.
 type Column struct {
 	Name       string `json:"name"`
-	Type       string `json:"type"`       // INTEGER, TEXT, REAL, BLOB, or custom
+	Type       string `json:"type"` // INTEGER, TEXT, REAL, BLOB, or custom
 	NotNull    bool   `json:"not_null"`
 	Default    string `json:"default,omitempty"`
 	PrimaryKey bool   `json:"primary_key"`
@@ -32,12 +32,12 @@ type ForeignKey struct {
 
 // Trigger represents a SQLite trigger.
 type Trigger struct {
-	Name      string `json:"name"`
-	Time      string `json:"time"`      // BEFORE, AFTER, INSTEAD OF
-	Event     string `json:"event"`     // INSERT, UPDATE, DELETE
-	Table     string `json:"table"`
-	ForEach   string `json:"for_each"`  // ROW, STATEMENT
-	Body      string `json:"body"`
+	Name    string `json:"name"`
+	Time    string `json:"time"`  // BEFORE, AFTER, INSTEAD OF
+	Event   string `json:"event"` // INSERT, UPDATE, DELETE
+	Table   string `json:"table"`
+	ForEach string `json:"for_each"` // ROW, STATEMENT
+	Body    string `json:"body"`
 }
 
 // View represents a SQL view.
@@ -48,12 +48,12 @@ type View struct {
 
 // Table represents a SQLite table with its columns, indexes, and constraints.
 type Table struct {
-	Name       string      `json:"name"`
-	Columns    []Column    `json:"columns"`
-	Indexes    []Index     `json:"indexes,omitempty"`
-	ForeignKeys []ForeignKey `json:"foreign_keys,omitempty"`
-	WithoutRowID bool      `json:"without_rowid,omitempty"`
-	CreateStmt string      `json:"create_stmt,omitempty"`
+	Name         string       `json:"name"`
+	Columns      []Column     `json:"columns"`
+	Indexes      []Index      `json:"indexes,omitempty"`
+	ForeignKeys  []ForeignKey `json:"foreign_keys,omitempty"`
+	WithoutRowID bool         `json:"without_rowid,omitempty"`
+	CreateStmt   string       `json:"create_stmt,omitempty"`
 }
 
 // DatabaseSchema represents the complete schema of a SQLite database.

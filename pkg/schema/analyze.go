@@ -75,16 +75,16 @@ func (g *MigrationGenerator) Generate(d *DiffResult) string {
 
 // ForeignKeyGraph represents the foreign key dependency graph.
 type ForeignKeyGraph struct {
-	Nodes []string          `json:"nodes"`
-	Edges []FKEdge          `json:"edges"`
-	Cycles [][]string       `json:"cycles,omitempty"`
+	Nodes  []string   `json:"nodes"`
+	Edges  []FKEdge   `json:"edges"`
+	Cycles [][]string `json:"cycles,omitempty"`
 }
 
 // FKEdge represents a foreign key relationship.
 type FKEdge struct {
-	FromTable string `json:"from_table"`
+	FromTable string   `json:"from_table"`
 	FromCols  []string `json:"from_cols"`
-	ToTable   string `json:"to_table"`
+	ToTable   string   `json:"to_table"`
 	ToCols    []string `json:"to_cols"`
 }
 
@@ -197,18 +197,18 @@ func FormatFKGraph(g *ForeignKeyGraph) string {
 
 // IndexAnalysisResult contains analysis of indexes in a schema.
 type IndexAnalysisResult struct {
-	RedundantIndexes []RedundantIndex `json:"redundant_indexes"`
-	MissingIndexes   []MissingIndex   `json:"missing_indexes"`
-	UnusedIndexes    []string         `json:"unused_indexes"`
-	OverIndexedTables []string        `json:"over_indexed_tables"`
+	RedundantIndexes  []RedundantIndex `json:"redundant_indexes"`
+	MissingIndexes    []MissingIndex   `json:"missing_indexes"`
+	UnusedIndexes     []string         `json:"unused_indexes"`
+	OverIndexedTables []string         `json:"over_indexed_tables"`
 }
 
 // RedundantIndex describes an index that is redundant with another.
 type RedundantIndex struct {
-	Index1    string `json:"index1"`
-	Index2    string `json:"index2"`
-	Table     string `json:"table"`
-	Reason    string `json:"reason"`
+	Index1 string `json:"index1"`
+	Index2 string `json:"index2"`
+	Table  string `json:"table"`
+	Reason string `json:"reason"`
 }
 
 // MissingIndex describes a potentially missing index.

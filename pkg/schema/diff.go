@@ -27,11 +27,11 @@ type SchemaChange struct {
 
 // DiffResult contains the complete diff between two schemas.
 type DiffResult struct {
-	Changes      []SchemaChange `json:"changes"`
-	AddCount     int            `json:"add_count"`
-	RemoveCount  int            `json:"remove_count"`
-	ModifyCount  int            `json:"modify_count"`
-	HasBreaking  bool           `json:"has_breaking"`
+	Changes     []SchemaChange `json:"changes"`
+	AddCount    int            `json:"add_count"`
+	RemoveCount int            `json:"remove_count"`
+	ModifyCount int            `json:"modify_count"`
+	HasBreaking bool           `json:"has_breaking"`
 }
 
 // Diff computes a semantic diff between two database schemas.

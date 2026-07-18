@@ -206,8 +206,8 @@ func trimBrackets(name string) string {
 // parseCreateTable parses a CREATE TABLE statement.
 func parseCreateTable(sql string) (*Table, error) {
 	table := &Table{
-		CreateStmt: sql,
-		Indexes:    make([]Index, 0),
+		CreateStmt:  sql,
+		Indexes:     make([]Index, 0),
 		ForeignKeys: make([]ForeignKey, 0),
 	}
 	// Extract table name
